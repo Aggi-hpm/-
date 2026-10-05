@@ -1,7 +1,7 @@
 import json
 import re
 import os
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 
 def normalize_question(text):
@@ -29,6 +29,7 @@ class QuestionMatcher:
             questions_path = os.path.join(base_dir, 'questions.json')
         self.questions_path = questions_path
         self.questions = {}
+        self._question_keys = []
         self._load_questions()
 
     def _load_questions(self):
@@ -36,10 +37,12 @@ class QuestionMatcher:
             with open(self.questions_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             self.questions = data.get('questions', {})
+            self._question_keys = list(self.questions.keys())
             print(f"题库加载完成：共 {len(self.questions)} 道题目")
         except Exception as e:
             print(f"题库加载失败: {e}")
             self.questions = {}
+            self._question_keys = []
 
     def match(self, question_text, threshold=70):
         if not question_text or not self.questions:
@@ -58,15 +61,12 @@ class QuestionMatcher:
                 'match_type': 'exact'
             }
 
-        best_score = 0
-        best_key = None
-        for key, item in self.questions.items():
-            score = fuzz.ratio(q_norm, key)
-            if score > best_score:
-                best_score = score
-                best_key = key
+        if not self._question_keys:
+            return None
 
-        if best_score >= threshold and best_key:
+        result = process.extractOne(q_norm, self._question_keys, scorer=fuzz.ratio, score_cutoff=threshold)
+        if result:
+            best_key, best_score, _ = result
             item = self.questions[best_key]
             return {
                 'question': item.get('question', ''),

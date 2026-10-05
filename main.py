@@ -12,59 +12,6 @@ from config_manager import ConfigManager
 from history_manager import HistoryManager
 
 
-class OverlayWindow:
-    def __init__(self):
-        self.window = None
-        self.label = None
-        self.hide_timer = None
-
-    def show(self, text, x, y, w, duration=5000):
-        self.hide()
-        self.window = tk.Toplevel()
-        self.window.overrideredirect(True)
-        self.window.attributes('-topmost', True)
-        self.window.attributes('-alpha', 0.92)
-        self.window.configure(bg='#1a1a2e')
-
-        self.label = tk.Label(
-            self.window,
-            text=text,
-            font=("微软雅黑", 22, "bold"),
-            fg='#00ff88',
-            bg='#1a1a2e',
-            padx=20,
-            pady=10,
-            wraplength=max(w - 40, 200)
-        )
-        self.label.pack()
-
-        self.window.update_idletasks()
-        win_w = self.window.winfo_width()
-        win_h = self.window.winfo_height()
-        pos_x = x + (w - win_w) // 2
-        pos_y = y - win_h - 10
-        if pos_y < 0:
-            pos_y = y + 10
-        self.window.geometry(f"+{pos_x}+{pos_y}")
-
-        self.hide_timer = self.window.after(duration, self.hide)
-
-    def hide(self):
-        if self.hide_timer:
-            try:
-                self.window.after_cancel(self.hide_timer)
-            except Exception:
-                pass
-            self.hide_timer = None
-        if self.window:
-            try:
-                self.window.destroy()
-            except Exception:
-                pass
-            self.window = None
-            self.label = None
-
-
 class MagicQAApp:
     def __init__(self, root):
         self.root = root
@@ -76,7 +23,6 @@ class MagicQAApp:
         self.matcher = QuestionMatcher()
         self.capture = ScreenCapture()
         self.history = HistoryManager()
-        self.overlay = OverlayWindow()
         self.ocr = None
         self.ocr_ready = False
 
@@ -102,7 +48,7 @@ class MagicQAApp:
     def _init_ocr_async(self):
         def init():
             try:
-                self.ocr = OCREngine(scale=self.config.get('ocr_scale', 2.0))
+                self.ocr = OCREngine(scale=self.config.get('ocr_scale', 1.5))
                 self.ocr_ready = True
                 self.root.after(0, lambda: self.status_var.set("就绪 | F8识别 | F9 OCR识别正确答案补充题库"))
             except Exception as e:
@@ -184,13 +130,8 @@ class MagicQAApp:
         tab = ttk.Frame(notebook, padding=8)
         notebook.add(tab, text="区域设置")
 
-        ttk.Label(tab, text="短题区域（一行字）", font=("微软雅黑", 10, "bold")).pack(anchor=tk.W, pady=(0, 4))
-        self._build_region_row(tab, 'question_region', '短题')
-
-        ttk.Separator(tab, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-
-        ttk.Label(tab, text="长题区域（两行字）", font=("微软雅黑", 10, "bold")).pack(anchor=tk.W, pady=(0, 4))
-        self._build_region_row(tab, 'question_region_long', '长题')
+        ttk.Label(tab, text="题目识别区域（框选题目文字所在位置，建议框大一些）", font=("微软雅黑", 10, "bold")).pack(anchor=tk.W, pady=(0, 4))
+        self._build_region_row(tab, 'question_region', '题目')
 
         ttk.Separator(tab, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
 
@@ -201,11 +142,7 @@ class MagicQAApp:
 
         auto_frame = ttk.Frame(tab)
         auto_frame.pack(fill=tk.X)
-        self.auto_detect_var = tk.BooleanVar(value=self.config.get('use_auto_detect', True))
-        ttk.Checkbutton(auto_frame, text="自动检测题目长短（根据文字行数切换区域）",
-                         variable=self.auto_detect_var,
-                         command=self._save_auto_detect).pack(anchor=tk.W)
-        ttk.Label(auto_frame, text="开启后，先截短题区域检测行数，超过1行自动切换长题区域重新识别。",
+        ttk.Label(auto_frame, text="自动识别开启后，检测到题目区域画面变化即自动识别。",
                   font=("微软雅黑", 8), foreground="gray").pack(anchor=tk.W, pady=(2, 0))
 
     def _build_region_row(self, parent, region_key, label):
@@ -287,7 +224,7 @@ class MagicQAApp:
         frame.pack(fill=tk.X, pady=4)
 
         ttk.Label(frame, text="OCR缩放倍数:").grid(row=0, column=0, sticky=tk.W, pady=4)
-        self.ocr_scale_var = tk.StringVar(value=str(self.config.get('ocr_scale', 2.0)))
+        self.ocr_scale_var = tk.StringVar(value=str(self.config.get('ocr_scale', 1.5)))
         ttk.Combobox(frame, textvariable=self.ocr_scale_var, values=['1.5', '2.0', '2.5', '3.0'],
                       width=8).grid(row=0, column=1, sticky=tk.W, pady=4)
 
@@ -302,29 +239,25 @@ class MagicQAApp:
                       width=8).grid(row=2, column=1, sticky=tk.W, pady=4)
 
         ttk.Label(frame, text="自动识别间隔(秒):").grid(row=3, column=0, sticky=tk.W, pady=4)
-        self.auto_interval_var = tk.StringVar(value=str(self.config.get('auto_interval', 1.5)))
+        self.auto_interval_var = tk.StringVar(value=str(self.config.get('auto_interval', 0.3)))
         ttk.Entry(frame, textvariable=self.auto_interval_var, width=8).grid(row=3, column=1, sticky=tk.W, pady=4)
-
-        self.overlay_var = tk.BooleanVar(value=self.config.get('show_overlay', True))
-        ttk.Checkbutton(frame, text="题目区域叠加显示答案（5秒后自动消失）", variable=self.overlay_var).grid(
-            row=4, column=0, columnspan=3, sticky=tk.W, pady=4)
 
         self.record_history_var = tk.BooleanVar(value=self.config.get('record_history', True))
         ttk.Checkbutton(frame, text="记录识别历史", variable=self.record_history_var).grid(
-            row=5, column=0, columnspan=3, sticky=tk.W, pady=4)
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=4)
 
         self.record_unmatched_var = tk.BooleanVar(value=self.config.get('record_unmatched', True))
         ttk.Checkbutton(frame, text="记录未匹配题目", variable=self.record_unmatched_var).grid(
-            row=6, column=0, columnspan=3, sticky=tk.W, pady=4)
+            row=5, column=0, columnspan=3, sticky=tk.W, pady=4)
 
         self.always_top_var = tk.BooleanVar(value=self.config.get('always_on_top', True))
         ttk.Checkbutton(frame, text="窗口置顶", variable=self.always_top_var,
-                         command=self._toggle_topmost).grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=4)
+                         command=self._toggle_topmost).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=4)
 
-        ttk.Button(frame, text="保存设置", command=self._save_settings).grid(row=8, column=0, pady=10)
+        ttk.Button(frame, text="保存设置", command=self._save_settings).grid(row=7, column=0, pady=10)
 
         ttk.Label(frame, text="\n快捷键:\n  F8 = 识别答题\n  F9 = OCR识别正确答案区域，补充到题库\n\n自动识别开启后，检测到题目变化会自动识别。",
-                  font=("微软雅黑", 9), foreground="gray").grid(row=9, column=0, columnspan=3, sticky=tk.W, pady=10)
+                  font=("微软雅黑", 9), foreground="gray").grid(row=8, column=0, columnspan=3, sticky=tk.W, pady=10)
 
     def _build_question_bank_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=8)
@@ -620,16 +553,12 @@ class MagicQAApp:
         self.root.attributes('-topmost', self.always_top_var.get())
         self.config.set('always_on_top', self.always_top_var.get())
 
-    def _save_auto_detect(self):
-        self.config.set('use_auto_detect', self.auto_detect_var.get())
-
     def _save_settings(self):
         try:
             self.config.set('ocr_scale', float(self.ocr_scale_var.get()))
             self.config.set('match_threshold', int(self.threshold_var.get()))
             self.config.set('font_size', int(self.font_size_var.get()))
             self.config.set('auto_interval', float(self.auto_interval_var.get()))
-            self.config.set('show_overlay', self.overlay_var.get())
             self.config.set('record_history', self.record_history_var.get())
             self.config.set('record_unmatched', self.record_unmatched_var.get())
             self.ocr.scale = float(self.ocr_scale_var.get())
@@ -761,9 +690,14 @@ class MagicQAApp:
             self.auto_thread.start()
 
     def _auto_loop(self):
+        recognize_start = 0
         while self.auto_running:
             try:
-                interval = self.config.get('auto_interval', 1.5)
+                interval = self.config.get('auto_interval', 0.3)
+                if self.is_recognizing and time.time() - recognize_start > 10:
+                    self.is_recognizing = False
+                    self.root.after(0, lambda: self.recognize_btn.config(state=tk.NORMAL))
+                    self.root.after(0, lambda: self.status_var.set("识别超时，已重置"))
                 region = self.config.get_region('question_region')
                 if not region:
                     time.sleep(interval)
@@ -772,32 +706,22 @@ class MagicQAApp:
                 img = self.capture.capture_region(x, y, w, h)
                 img_hash = self._image_hash(img)
                 if img_hash != self.last_question_hash:
-                    change_ratio = self._change_ratio(img)
-                    if change_ratio > self.config.get('auto_change_threshold', 0.3):
-                        self.last_question_hash = img_hash
-                        self.last_capture_img = img
-                        if not self.is_recognizing:
-                            self.root.after(0, self._recognize)
+                    self.last_question_hash = img_hash
+                    if not self.is_recognizing:
+                        self.is_recognizing = True
+                        recognize_start = time.time()
+                        self.root.after(0, lambda: self.recognize_btn.config(state=tk.DISABLED))
+                        self.root.after(0, lambda: self.status_var.set("识别中..."))
+                        threading.Thread(target=self._do_recognize, daemon=True).start()
                 time.sleep(interval)
             except Exception as e:
                 print(f"自动识别循环错误: {e}")
-                time.sleep(interval)
+                time.sleep(0.5)
 
     def _image_hash(self, img):
-        small = img.resize((16, 16)).convert('L')
+        small = img.resize((8, 8)).convert('L')
         arr = np.array(small)
         return hash(arr.tobytes())
-
-    def _change_ratio(self, img):
-        if self.last_capture_img is None:
-            return 1.0
-        try:
-            arr1 = np.array(img.convert('L').resize((50, 50)))
-            arr2 = np.array(self.last_capture_img.convert('L').resize((50, 50)))
-            diff = np.mean(np.abs(arr1.astype(float) - arr2.astype(float))) / 255.0
-            return diff
-        except Exception:
-            return 1.0
 
     def _recognize(self):
         if self.is_recognizing:
@@ -813,40 +737,22 @@ class MagicQAApp:
     def _do_recognize(self):
         try:
             t0 = time.time()
-            use_auto = self.config.get('use_auto_detect', True)
-            short_region = self.config.get_region('question_region')
-            long_region = self.config.get_region('question_region_long')
+            region = self.config.get_region('question_region')
 
-            if not short_region:
+            if not region:
                 self._show_answer("请先在「区域设置」中设置题目识别区域", "错误")
                 return
 
-            x, y, w, h = short_region
+            x, y, w, h = region
             img = self.capture.capture_region(x, y, w, h)
-            current_region = short_region
-            q_type = 'short'
-            line_count = 1
-
-            if use_auto and long_region:
-                q_type, detected_lines = self.ocr.detect_type(img)
-                if q_type == 'long':
-                    lx, ly, lw, lh = long_region
-                    img = self.capture.capture_region(lx, ly, lw, lh)
-                    current_region = long_region
-                    line_count = detected_lines
-                else:
-                    line_count = detected_lines if detected_lines > 0 else 1
-
             q_result = self.ocr.recognize_question(img)
             q_text = q_result['full_text']
-            line_count = q_result.get('line_count', line_count)
-            q_type = 'long' if line_count >= 2 else 'short'
-            self.last_question_region = current_region
+            line_count = q_result.get('line_count', 1)
 
             t1 = time.time()
             ocr_time = (t1 - t0) * 1000
 
-            self.root.after(0, lambda: self.q_type_var.set(f"题目类型: {q_type}({line_count}行) OCR:{ocr_time:.0f}ms"))
+            self.root.after(0, lambda: self.q_type_var.set(f"{line_count}行 OCR:{ocr_time:.0f}ms"))
 
             if not q_text:
                 self._show_answer("未识别到题目文字\n\n请检查区域设置或调整OCR缩放倍数", "未识别")
@@ -866,9 +772,6 @@ class MagicQAApp:
                 self.last_unmatched_question = None
                 if self.config.get('record_history', True):
                     self.history.add_record(q_text, answer, match_type, conf, 'local', ocr_time)
-                if self.config.get('show_overlay', True) and current_region:
-                    ox, oy, ow, oh = current_region
-                    self.root.after(0, lambda: self.overlay.show(answer, ox, oy, ow))
             else:
                 self.last_unmatched_question = q_text
                 self._show_answer(f"题库未找到答案\n\n识别题目:\n{q_text}\n\n请手动作答，然后按 F9 补充正确答案到题库", "未匹配")
@@ -1011,7 +914,6 @@ class MagicQAApp:
         self.match_info_var.set("")
         self.last_question_hash = None
         self.last_capture_img = None
-        self.overlay.hide()
 
     def _refresh_history(self):
         for item in self.history_tree.get_children():
@@ -1060,7 +962,6 @@ class MagicQAApp:
 
     def _on_close(self):
         self.auto_running = False
-        self.overlay.hide()
         self.root.destroy()
 
 
