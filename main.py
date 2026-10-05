@@ -10,6 +10,7 @@ from question_matcher import QuestionMatcher
 from screen_capture import ScreenCapture
 from config_manager import ConfigManager
 from history_manager import HistoryManager
+from clicker import click_at
 
 
 class MagicQAApp:
@@ -140,6 +141,11 @@ class MagicQAApp:
 
         ttk.Separator(tab, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
 
+        ttk.Label(tab, text="选项区域（框选包含A/B/C/D四个选项的区域，开启自动点击后识别此区域匹配答案）", font=("微软雅黑", 10, "bold")).pack(anchor=tk.W, pady=(0, 4))
+        self._build_region_row(tab, 'options_region', '选项')
+
+        ttk.Separator(tab, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+
         auto_frame = ttk.Frame(tab)
         auto_frame.pack(fill=tk.X)
         ttk.Label(auto_frame, text="自动识别开启后，检测到题目区域画面变化即自动识别。",
@@ -250,14 +256,18 @@ class MagicQAApp:
         ttk.Checkbutton(frame, text="记录未匹配题目", variable=self.record_unmatched_var).grid(
             row=5, column=0, columnspan=3, sticky=tk.W, pady=4)
 
+        self.auto_click_var = tk.BooleanVar(value=self.config.get('auto_click', False))
+        ttk.Checkbutton(frame, text="自动点击选项（识别到答案后自动点击对应选项，需配置选项区域）", variable=self.auto_click_var).grid(
+            row=6, column=0, columnspan=3, sticky=tk.W, pady=4)
+
         self.always_top_var = tk.BooleanVar(value=self.config.get('always_on_top', True))
         ttk.Checkbutton(frame, text="窗口置顶", variable=self.always_top_var,
-                         command=self._toggle_topmost).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=4)
+                         command=self._toggle_topmost).grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=4)
 
-        ttk.Button(frame, text="保存设置", command=self._save_settings).grid(row=7, column=0, pady=10)
+        ttk.Button(frame, text="保存设置", command=self._save_settings).grid(row=8, column=0, pady=10)
 
         ttk.Label(frame, text="\n快捷键:\n  F8 = 识别答题\n  F9 = OCR识别正确答案区域，补充到题库\n\n自动识别开启后，检测到题目变化会自动识别。",
-                  font=("微软雅黑", 9), foreground="gray").grid(row=8, column=0, columnspan=3, sticky=tk.W, pady=10)
+                  font=("微软雅黑", 9), foreground="gray").grid(row=9, column=0, columnspan=3, sticky=tk.W, pady=10)
 
     def _build_question_bank_tab(self, notebook):
         tab = ttk.Frame(notebook, padding=8)
@@ -561,6 +571,7 @@ class MagicQAApp:
             self.config.set('auto_interval', float(self.auto_interval_var.get()))
             self.config.set('record_history', self.record_history_var.get())
             self.config.set('record_unmatched', self.record_unmatched_var.get())
+            self.config.set('auto_click', self.auto_click_var.get())
             self.ocr.scale = float(self.ocr_scale_var.get())
             self.answer_text.config(font=("微软雅黑", int(self.font_size_var.get()), "bold"))
             self.status_var.set("设置已保存")
@@ -772,6 +783,8 @@ class MagicQAApp:
                 self.last_unmatched_question = None
                 if self.config.get('record_history', True):
                     self.history.add_record(q_text, answer, match_type, conf, 'local', ocr_time)
+                if self.config.get('auto_click', False):
+                    self._click_matched_option(answer)
             else:
                 self.last_unmatched_question = q_text
                 self._show_answer(f"题库未找到答案\n\n识别题目:\n{q_text}\n\n请手动作答，然后按 F9 补充正确答案到题库", "未匹配")
@@ -791,6 +804,32 @@ class MagicQAApp:
         finally:
             self.is_recognizing = False
             self.root.after(0, lambda: self.recognize_btn.config(state=tk.NORMAL))
+
+    def _click_matched_option(self, answer):
+        try:
+            options_region = self.config.get_region('options_region')
+            if not options_region:
+                return
+            ox, oy, ow, oh = options_region
+            img = self.capture.capture_region(ox, oy, ow, oh)
+            options = self.ocr.recognize_options(img)
+            if not options:
+                return
+            from rapidfuzz import fuzz
+            best_score = 0
+            best_option = None
+            for opt in options:
+                score = fuzz.ratio(answer, opt['text'])
+                if score > best_score:
+                    best_score = score
+                    best_option = opt
+            if best_option and best_score >= 50:
+                click_x = ox + best_option['center_x']
+                click_y = oy + best_option['center_y']
+                click_at(click_x, click_y, dwell_min=20, dwell_max=50, random_offset=8)
+                self.root.after(0, lambda: self.status_var.set(f"已点击选项: {best_option['text'][:20]} (匹配度{best_score:.0f}%)"))
+        except Exception as e:
+            print(f"自动点击出错: {e}")
 
     def _supplement_answer(self):
         if not self.ocr_ready:

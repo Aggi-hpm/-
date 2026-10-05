@@ -94,3 +94,39 @@ class OCREngine:
         except Exception as e:
             print(f"OCR识别出错: {e}")
             return {'full_text': '', 'blocks': [], 'line_count': 0}
+
+    def recognize_options(self, image, scale=None):
+        if not self.is_ready():
+            return []
+        if isinstance(image, str):
+            img = Image.open(image).convert('RGB')
+        elif isinstance(image, Image.Image):
+            img = image.convert('RGB') if image.mode != 'RGB' else image
+        else:
+            img = Image.fromarray(np.array(image)).convert('RGB')
+
+        use_scale = scale if scale is not None else self.scale
+        img = preprocess_question(img, scale=use_scale)
+
+        try:
+            result, _ = self.engine(np.array(img))
+            if not result:
+                return []
+            options = []
+            for box, text, conf in result:
+                text_stripped = text.strip()
+                if not text_stripped:
+                    continue
+                center_x = (box[0][0] + box[2][0]) / 2 / use_scale
+                center_y = (box[0][1] + box[2][1]) / 2 / use_scale
+                options.append({
+                    'text': text_stripped,
+                    'center_x': center_x,
+                    'center_y': center_y,
+                    'confidence': conf
+                })
+            options.sort(key=lambda o: (o['center_y'], o['center_x']))
+            return options
+        except Exception as e:
+            print(f"选项识别出错: {e}")
+            return []
