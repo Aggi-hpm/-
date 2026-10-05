@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+python/
+config.json
+history.json
+未匹配题目列表.txt
+temp*/
+*.log

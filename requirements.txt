@@ -1,0 +1,6 @@
+rapidocr-onnxruntime>=1.2.0
+onnxruntime
+numpy
+pillow
+mss
+rapidfuzz
